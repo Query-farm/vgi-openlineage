@@ -1,0 +1,421 @@
+[
+  {
+    "eventTime": "2026-11-02T02:04:00Z",
+    "eventType": "START",
+    "inputs": [
+      {
+        "facets": {
+          "dataSource": {
+            "_producer": "https://github.com/apache/airflow/tree/providers-openlineage/1.14.0",
+            "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/DatasourceDatasetFacet.json",
+            "name": "bigquery",
+            "uri": "bigquery"
+          },
+          "schema": {
+            "_producer": "https://github.com/apache/airflow/tree/providers-openlineage/1.14.0",
+            "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/SchemaDatasetFacet.json",
+            "fields": [
+              {
+                "name": "order_date",
+                "type": "DATE"
+              },
+              {
+                "name": "customer_id",
+                "type": "INT64"
+              },
+              {
+                "name": "revenue",
+                "type": "NUMERIC"
+              }
+            ]
+          }
+        },
+        "name": "analytics.orders_daily",
+        "namespace": "bigquery"
+      },
+      {
+        "facets": {
+          "dataSource": {
+            "_producer": "https://github.com/apache/airflow/tree/providers-openlineage/1.14.0",
+            "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/DatasourceDatasetFacet.json",
+            "name": "postgres",
+            "uri": "postgres://db.internal:5432"
+          }
+        },
+        "name": "crm.public.customers",
+        "namespace": "postgres://db.internal:5432"
+      }
+    ],
+    "job": {
+      "facets": {
+        "jobType": {
+          "_producer": "https://github.com/apache/airflow/tree/providers-openlineage/1.14.0",
+          "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/JobTypeJobFacet.json",
+          "integration": "SPARK",
+          "jobType": "SQL_JOB",
+          "processingType": "BATCH"
+        }
+      },
+      "name": "orders_enrich.execute_insert_into_hadoop_fs_relation_command",
+      "namespace": "spark-cluster"
+    },
+    "outputs": [],
+    "producer": "https://github.com/OpenLineage/OpenLineage/tree/1.24.2/integration/spark",
+    "run": {
+      "facets": {
+        "parent": {
+          "_producer": "https://github.com/apache/airflow/tree/providers-openlineage/1.14.0",
+          "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/ParentRunFacet.json",
+          "job": {
+            "name": "etl_orders.transform",
+            "namespace": "airflow-prod"
+          },
+          "root": {
+            "job": {
+              "name": "etl_orders",
+              "namespace": "airflow-prod"
+            },
+            "run": {
+              "runId": "01930a6e-0000-7000-8000-000000000001"
+            }
+          },
+          "run": {
+            "runId": "01930a6e-0000-7000-8000-000000000003"
+          }
+        },
+        "processing_engine": {
+          "_producer": "https://github.com/apache/airflow/tree/providers-openlineage/1.14.0",
+          "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/ProcessingEngineRunFacet.json",
+          "name": "spark",
+          "openlineageAdapterVersion": "1.24.2",
+          "version": "3.5.1"
+        },
+        "spark_properties": {
+          "_producer": "https://github.com/apache/airflow/tree/providers-openlineage/1.14.0",
+          "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/SparkPropertiesRunFacet.json",
+          "properties": {
+            "spark.app.name": "orders_enrich",
+            "spark.master": "yarn"
+          }
+        }
+      },
+      "runId": "01930a6e-0000-7000-8000-000000000006"
+    },
+    "schemaURL": "https://openlineage.io/spec/2-0-2/OpenLineage.json#/definitions/RunEvent"
+  },
+  {
+    "eventTime": "2026-11-02T02:06:00Z",
+    "eventType": "RUNNING",
+    "inputs": [
+      {
+        "facets": {
+          "dataSource": {
+            "_producer": "https://github.com/apache/airflow/tree/providers-openlineage/1.14.0",
+            "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/DatasourceDatasetFacet.json",
+            "name": "bigquery",
+            "uri": "bigquery"
+          },
+          "schema": {
+            "_producer": "https://github.com/apache/airflow/tree/providers-openlineage/1.14.0",
+            "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/SchemaDatasetFacet.json",
+            "fields": [
+              {
+                "name": "order_date",
+                "type": "DATE"
+              },
+              {
+                "name": "customer_id",
+                "type": "INT64"
+              },
+              {
+                "name": "revenue",
+                "type": "NUMERIC"
+              }
+            ]
+          }
+        },
+        "name": "analytics.orders_daily",
+        "namespace": "bigquery"
+      },
+      {
+        "facets": {
+          "dataSource": {
+            "_producer": "https://github.com/apache/airflow/tree/providers-openlineage/1.14.0",
+            "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/DatasourceDatasetFacet.json",
+            "name": "postgres",
+            "uri": "postgres://db.internal:5432"
+          }
+        },
+        "name": "crm.public.customers",
+        "namespace": "postgres://db.internal:5432"
+      }
+    ],
+    "job": {
+      "facets": {
+        "jobType": {
+          "_producer": "https://github.com/apache/airflow/tree/providers-openlineage/1.14.0",
+          "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/JobTypeJobFacet.json",
+          "integration": "SPARK",
+          "jobType": "SQL_JOB",
+          "processingType": "BATCH"
+        }
+      },
+      "name": "orders_enrich.execute_insert_into_hadoop_fs_relation_command",
+      "namespace": "spark-cluster"
+    },
+    "outputs": [],
+    "producer": "https://github.com/OpenLineage/OpenLineage/tree/1.24.2/integration/spark",
+    "run": {
+      "facets": {
+        "parent": {
+          "_producer": "https://github.com/apache/airflow/tree/providers-openlineage/1.14.0",
+          "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/ParentRunFacet.json",
+          "job": {
+            "name": "etl_orders.transform",
+            "namespace": "airflow-prod"
+          },
+          "root": {
+            "job": {
+              "name": "etl_orders",
+              "namespace": "airflow-prod"
+            },
+            "run": {
+              "runId": "01930a6e-0000-7000-8000-000000000001"
+            }
+          },
+          "run": {
+            "runId": "01930a6e-0000-7000-8000-000000000003"
+          }
+        },
+        "processing_engine": {
+          "_producer": "https://github.com/apache/airflow/tree/providers-openlineage/1.14.0",
+          "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/ProcessingEngineRunFacet.json",
+          "name": "spark",
+          "openlineageAdapterVersion": "1.24.2",
+          "version": "3.5.1"
+        }
+      },
+      "runId": "01930a6e-0000-7000-8000-000000000006"
+    },
+    "schemaURL": "https://openlineage.io/spec/2-0-2/OpenLineage.json#/definitions/RunEvent"
+  },
+  {
+    "eventTime": "2026-11-02T02:09:30Z",
+    "eventType": "COMPLETE",
+    "inputs": [
+      {
+        "facets": {
+          "dataSource": {
+            "_producer": "https://github.com/apache/airflow/tree/providers-openlineage/1.14.0",
+            "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/DatasourceDatasetFacet.json",
+            "name": "bigquery",
+            "uri": "bigquery"
+          },
+          "schema": {
+            "_producer": "https://github.com/apache/airflow/tree/providers-openlineage/1.14.0",
+            "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/SchemaDatasetFacet.json",
+            "fields": [
+              {
+                "name": "order_date",
+                "type": "DATE"
+              },
+              {
+                "name": "customer_id",
+                "type": "INT64"
+              },
+              {
+                "name": "revenue",
+                "type": "NUMERIC"
+              }
+            ]
+          }
+        },
+        "name": "analytics.orders_daily",
+        "namespace": "bigquery"
+      },
+      {
+        "facets": {
+          "dataSource": {
+            "_producer": "https://github.com/apache/airflow/tree/providers-openlineage/1.14.0",
+            "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/DatasourceDatasetFacet.json",
+            "name": "postgres",
+            "uri": "postgres://db.internal:5432"
+          }
+        },
+        "name": "crm.public.customers",
+        "namespace": "postgres://db.internal:5432"
+      }
+    ],
+    "job": {
+      "facets": {
+        "jobType": {
+          "_producer": "https://github.com/apache/airflow/tree/providers-openlineage/1.14.0",
+          "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/JobTypeJobFacet.json",
+          "integration": "SPARK",
+          "jobType": "SQL_JOB",
+          "processingType": "BATCH"
+        }
+      },
+      "name": "orders_enrich.execute_insert_into_hadoop_fs_relation_command",
+      "namespace": "spark-cluster"
+    },
+    "outputs": [
+      {
+        "facets": {
+          "columnLineage": {
+            "_producer": "https://github.com/apache/airflow/tree/providers-openlineage/1.14.0",
+            "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/ColumnLineageDatasetFacet.json",
+            "fields": {
+              "customer_id": {
+                "inputFields": [
+                  {
+                    "field": "customer_id",
+                    "name": "analytics.orders_daily",
+                    "namespace": "bigquery",
+                    "transformations": [
+                      {
+                        "description": "",
+                        "masking": false,
+                        "subtype": "IDENTITY",
+                        "type": "DIRECT"
+                      }
+                    ]
+                  }
+                ]
+              },
+              "order_date": {
+                "inputFields": [
+                  {
+                    "field": "order_date",
+                    "name": "analytics.orders_daily",
+                    "namespace": "bigquery",
+                    "transformations": [
+                      {
+                        "description": "",
+                        "masking": false,
+                        "subtype": "IDENTITY",
+                        "type": "DIRECT"
+                      }
+                    ]
+                  }
+                ]
+              },
+              "revenue": {
+                "inputFields": [
+                  {
+                    "field": "revenue",
+                    "name": "analytics.orders_daily",
+                    "namespace": "bigquery",
+                    "transformations": [
+                      {
+                        "description": "",
+                        "masking": false,
+                        "subtype": "IDENTITY",
+                        "type": "DIRECT"
+                      }
+                    ]
+                  }
+                ]
+              },
+              "segment": {
+                "inputFields": [
+                  {
+                    "field": "tier",
+                    "name": "crm.public.customers",
+                    "namespace": "postgres://db.internal:5432",
+                    "transformations": [
+                      {
+                        "description": "",
+                        "masking": false,
+                        "subtype": "TRANSFORMATION",
+                        "type": "DIRECT"
+                      }
+                    ]
+                  },
+                  {
+                    "field": "revenue",
+                    "name": "analytics.orders_daily",
+                    "namespace": "bigquery",
+                    "transformations": [
+                      {
+                        "description": "",
+                        "masking": false,
+                        "subtype": "CONDITIONAL",
+                        "type": "INDIRECT"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "dataSource": {
+            "_producer": "https://github.com/apache/airflow/tree/providers-openlineage/1.14.0",
+            "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/DatasourceDatasetFacet.json",
+            "name": "bigquery",
+            "uri": "bigquery"
+          },
+          "schema": {
+            "_producer": "https://github.com/apache/airflow/tree/providers-openlineage/1.14.0",
+            "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/SchemaDatasetFacet.json",
+            "fields": [
+              {
+                "name": "order_date",
+                "type": "DATE"
+              },
+              {
+                "name": "customer_id",
+                "type": "INT64"
+              },
+              {
+                "name": "revenue",
+                "type": "NUMERIC"
+              },
+              {
+                "description": "Customer segment",
+                "name": "segment",
+                "type": "STRING"
+              }
+            ]
+          }
+        },
+        "name": "analytics.orders_enriched",
+        "namespace": "bigquery"
+      }
+    ],
+    "producer": "https://github.com/OpenLineage/OpenLineage/tree/1.24.2/integration/spark",
+    "run": {
+      "facets": {
+        "parent": {
+          "_producer": "https://github.com/apache/airflow/tree/providers-openlineage/1.14.0",
+          "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/ParentRunFacet.json",
+          "job": {
+            "name": "etl_orders.transform",
+            "namespace": "airflow-prod"
+          },
+          "root": {
+            "job": {
+              "name": "etl_orders",
+              "namespace": "airflow-prod"
+            },
+            "run": {
+              "runId": "01930a6e-0000-7000-8000-000000000001"
+            }
+          },
+          "run": {
+            "runId": "01930a6e-0000-7000-8000-000000000003"
+          }
+        },
+        "processing_engine": {
+          "_producer": "https://github.com/apache/airflow/tree/providers-openlineage/1.14.0",
+          "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/ProcessingEngineRunFacet.json",
+          "name": "spark",
+          "openlineageAdapterVersion": "1.24.2",
+          "version": "3.5.1"
+        }
+      },
+      "runId": "01930a6e-0000-7000-8000-000000000006"
+    },
+    "schemaURL": "https://openlineage.io/spec/2-0-2/OpenLineage.json#/definitions/RunEvent"
+  }
+]

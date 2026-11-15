@@ -1,0 +1,57 @@
+{
+  "eventTime": "2026-11-02T03:00:02Z",
+  "eventType": "START",
+  "inputs": [
+    {
+      "facets": {
+        "dataSource": {
+          "_producer": "https://github.com/apache/airflow/tree/providers-openlineage/1.14.0",
+          "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/DatasourceDatasetFacet.json",
+          "name": "bigquery",
+          "uri": "bigquery"
+        }
+      },
+      "name": "analytics.orders_enriched",
+      "namespace": "bigquery"
+    }
+  ],
+  "job": {
+    "facets": {
+      "jobType": {
+        "_producer": "https://github.com/apache/airflow/tree/providers-openlineage/1.14.0",
+        "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/JobTypeJobFacet.json",
+        "integration": "DBT",
+        "jobType": "MODEL",
+        "processingType": "BATCH"
+      }
+    },
+    "name": "jaffle_shop.customers",
+    "namespace": "dbt"
+  },
+  "outputs": [],
+  "producer": "https://github.com/OpenLineage/OpenLineage/tree/1.24.2/integration/dbt",
+  "run": {
+    "facets": {
+      "parent": {
+        "_producer": "https://github.com/apache/airflow/tree/providers-openlineage/1.14.0",
+        "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/ParentRunFacet.json",
+        "job": {
+          "name": "dbt-run-jaffle_shop",
+          "namespace": "dbt"
+        },
+        "run": {
+          "runId": "01930a6e-0000-7000-8000-000000000007"
+        }
+      },
+      "processing_engine": {
+        "_producer": "https://github.com/apache/airflow/tree/providers-openlineage/1.14.0",
+        "_schemaURL": "https://openlineage.io/spec/facets/1-0-1/ProcessingEngineRunFacet.json",
+        "name": "dbt",
+        "openlineageAdapterVersion": "1.24.2",
+        "version": "1.8.2"
+      }
+    },
+    "runId": "01930a6e-0000-7000-8000-000000000008"
+  },
+  "schemaURL": "https://openlineage.io/spec/2-0-2/OpenLineage.json#/definitions/RunEvent"
+}

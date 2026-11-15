@@ -1,0 +1,29 @@
+# A real Marquez (OpenLineage reference server) for recording fixtures and live tests.
+#   docker compose -f test/marquez/docker-compose.yml -p vgi-openlineage up -d
+#   uv run python test/marquez/seed.py http://127.0.0.1:5055
+#   docker compose -f test/marquez/docker-compose.yml -p vgi-openlineage down -v
+services:
+  db:
+    image: postgres:14-alpine
+    container_name: vgi-openlineage-db
+    environment:
+      POSTGRES_USER: marquez
+      POSTGRES_PASSWORD: marquez
+      POSTGRES_DB: marquez
+    mem_limit: 512m
+  api:
+    image: marquezproject/marquez:0.51.1
+    container_name: vgi-openlineage-api
+    depends_on: [db]
+    environment:
+      MARQUEZ_PORT: "5000"
+      MARQUEZ_ADMIN_PORT: "5001"
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: marquez
+      POSTGRES_USER: marquez
+      POSTGRES_PASSWORD: marquez
+      JAVA_OPTS: "-Xmx512m"
+    ports:
+      - "127.0.0.1:5055:5000"
+    mem_limit: 1g

@@ -1,0 +1,2 @@
+{"eventType":"START","eventTime":"2026-11-01T00:00:00Z","run":{"runId":"r1"},"job":{"namespace":"n","name":"j"},"inputs":[],"outputs":[],"producer":"p","schemaURL":"s"}
+not json at all

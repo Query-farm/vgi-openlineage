@@ -1,0 +1,298 @@
+# name: test/sql/marquez.test
+# description: Marquez tables and functions against recorded responses (test/fixtures/marquez)
+# group: [openlineage]
+
+require vgi
+
+require-env OPENLINEAGE_WORKER
+
+require-env OPENLINEAGE_MOCK_MARQUEZ
+
+require-env OPENLINEAGE_MOCK_MARQUEZ_AUTH
+
+require-env OPENLINEAGE_FIXTURES
+
+statement ok
+LOAD json;
+
+statement ok
+ATTACH 'openlineage' (TYPE vgi, LOCATION '{OPENLINEAGE_WORKER}');
+
+# No secret yet: a clear error.
+statement error
+SELECT * FROM openlineage.marquez.namespaces;
+----
+no marquez secret found
+
+# PAGE_SIZE 2 makes every listing span several pages (resumable offset cursor),
+# and the mock answers each URL's first request with 429 + Retry-After.
+statement ok
+CREATE SECRET marquez_test (TYPE marquez, BASE_URL '{OPENLINEAGE_MOCK_MARQUEZ}', PAGE_SIZE '2');
+
+# ---------------------------------------------------------------- tables
+
+query T
+SELECT string_agg(name, ',' ORDER BY name) FROM openlineage.marquez.namespaces;
+----
+airflow-prod,bigquery,dagster,dbt,default,postgres://db.internal:5432,reports,s3://lake,spark-cluster
+
+query TT
+SELECT name, connection_url FROM openlineage.marquez.sources ORDER BY name;
+----
+bigquery	bigquery
+postgres	postgres://db.internal:5432
+s3	s3://lake
+
+query TTIT
+SELECT namespace, name, len(fields), source_name FROM openlineage.marquez.datasets ORDER BY namespace, name;
+----
+bigquery	analytics.customers	2	bigquery
+bigquery	analytics.orders_daily	3	bigquery
+bigquery	analytics.orders_enriched	4	bigquery
+postgres://db.internal:5432	crm.public.customers	0	postgres
+postgres://db.internal:5432	shop.public.orders	4	postgres
+s3://lake	raw/orders	4	s3
+
+# fields is LIST(STRUCT); facets is JSON.
+query TTT
+SELECT f.name, f.type, facets->>'$.documentation.description'
+FROM (SELECT unnest(fields) AS f, facets FROM openlineage.marquez.datasets WHERE name = 'analytics.customers')
+ORDER BY f.name;
+----
+customer_id	INT64	One row per customer with lifetime revenue.
+lifetime_revenue	NUMERIC	One row per customer with lifetime revenue.
+
+# namespace pushes down to one listing (a namespace with '://' in it).
+query TT
+SELECT namespace, name FROM openlineage.marquez.datasets WHERE namespace = 's3://lake';
+----
+s3://lake	raw/orders
+
+query TTT
+SELECT namespace, name, latest_run_state FROM openlineage.marquez.jobs ORDER BY namespace, name;
+----
+airflow-prod	etl_orders	FAILED
+airflow-prod	etl_orders.extract	FAILED
+airflow-prod	etl_orders.transform	COMPLETED
+dagster	nightly_snapshot	ABORTED
+dbt	dbt-run-jaffle_shop	RUNNING
+dbt	dbt-run-jaffle_shop.jaffle_shop.customer_ltv	RUNNING
+dbt	dbt-run-jaffle_shop.jaffle_shop.customers	COMPLETED
+reports	weekly_revenue	NULL
+spark-cluster	etl_orders.transform.orders_enrich.execute_insert_into_hadoop_fs_relation_command	COMPLETED
+
+query T
+SELECT name FROM openlineage.marquez.jobs WHERE namespace IN ('dbt', 'reports') ORDER BY name;
+----
+dbt-run-jaffle_shop
+dbt-run-jaffle_shop.jaffle_shop.customer_ltv
+dbt-run-jaffle_shop.jaffle_shop.customers
+weekly_revenue
+
+query TTTIT
+SELECT namespace, job_name, state, duration_ms, orchestrator FROM openlineage.marquez.runs ORDER BY started_at;
+----
+airflow-prod	etl_orders	COMPLETED	625000	airflow
+airflow-prod	etl_orders.extract	COMPLETED	180000	airflow
+airflow-prod	etl_orders.transform	COMPLETED	420000	airflow
+spark-cluster	etl_orders.transform.orders_enrich.execute_insert_into_hadoop_fs_relation_command	COMPLETED	210000	spark
+dbt	dbt-run-jaffle_shop	RUNNING	NULL	dbt
+dbt	dbt-run-jaffle_shop.jaffle_shop.customers	COMPLETED	38000	dbt
+dbt	dbt-run-jaffle_shop.jaffle_shop.customer_ltv	RUNNING	NULL	dbt
+airflow-prod	etl_orders	FAILED	105000	airflow
+airflow-prod	etl_orders.extract	FAILED	90000	airflow
+dagster	nightly_snapshot	ABORTED	300000	unknown
+
+# namespace + job_name push down to a single job's runs.
+query TTT
+SELECT state, parent_job_name, error_message FROM openlineage.marquez.runs
+WHERE namespace = 'airflow-prod' AND job_name = 'etl_orders.extract' ORDER BY started_at;
+----
+COMPLETED	etl_orders	NULL
+FAILED	etl_orders	psycopg2.OperationalError: connection refused
+
+query TTTT
+SELECT input_versions[1].namespace, input_versions[1].name, output_versions[1].name, args->>'$.run_id'
+FROM openlineage.marquez.runs WHERE run_id = '01930a6e-0000-7000-8000-000000000002';
+----
+postgres://db.internal:5432	shop.public.orders	raw/orders	01930a6e-0000-7000-8000-000000000001
+
+query ITT
+SELECT count(*), min(event_time)::VARCHAR, max(event_time)::VARCHAR FROM openlineage.marquez.lineage_events;
+----
+20	2026-11-02 02:00:05+00	2026-11-04 10:05:03+00
+
+# event_time range pushes down to after/before.
+query TTT
+SELECT job_name, event_type, parent_job_name FROM openlineage.marquez.lineage_events
+WHERE event_time >= TIMESTAMPTZ '2026-11-03 00:00:00+00' AND event_time < TIMESTAMPTZ '2026-11-04 00:00:00+00'
+ORDER BY event_time;
+----
+etl_orders	START	NULL
+etl_orders.extract	START	etl_orders
+etl_orders.extract	FAIL	etl_orders
+etl_orders	FAIL	NULL
+
+# ---------------------------------------------------------------- functions
+
+query IIT
+SELECT len(fields), count(*) OVER (), created_by_run_id FROM openlineage.marquez.dataset_versions('bigquery', 'analytics.customers')
+ORDER BY created_at;
+----
+2	2	01930a6e-0000-7000-8000-000000000008
+2	2	NULL
+
+query IIT
+SELECT len(inputs), len(outputs), latest_run_state FROM openlineage.marquez.job_versions('airflow-prod', 'etl_orders.transform');
+----
+1	1	COMPLETED
+
+query TTT
+SELECT facet_type, facet_name, facet->>'$.message' FROM openlineage.marquez.run_facets('01930a6e-0000-7000-8000-000000000005') ORDER BY ALL;
+----
+job	jobType	NULL
+run	airflow	NULL
+run	errorMessage	psycopg2.OperationalError: connection refused
+run	parent	NULL
+
+query TIT
+SELECT direction, hops, node_id FROM openlineage.marquez.lineage_graph('dataset:bigquery:analytics.orders_daily', depth := 2)
+ORDER BY hops, direction, node_id;
+----
+start	0	dataset:bigquery:analytics.orders_daily
+downstream	1	job:spark-cluster:etl_orders.transform.orders_enrich.execute_insert_into_hadoop_fs_relation_command
+upstream	1	job:airflow-prod:etl_orders.transform
+downstream	2	dataset:bigquery:analytics.orders_enriched
+upstream	2	dataset:s3://lake:raw/orders
+downstream	3	job:dbt:dbt-run-jaffle_shop.jaffle_shop.customers
+downstream	4	dataset:bigquery:analytics.customers
+NULL	NULL	dataset:postgres://db.internal:5432:crm.public.customers
+
+query TTTT
+SELECT output_dataset, output_field, input_dataset, input_field
+FROM openlineage.marquez.column_lineage('dataset:bigquery:analytics.customers') ORDER BY ALL;
+----
+analytics.customers	customer_id	analytics.orders_enriched	customer_id
+analytics.customers	lifetime_revenue	analytics.orders_enriched	revenue
+analytics.orders_daily	customer_id	raw/orders	customer_id
+analytics.orders_daily	revenue	raw/orders	amount
+analytics.orders_enriched	customer_id	analytics.orders_daily	customer_id
+analytics.orders_enriched	revenue	analytics.orders_daily	revenue
+raw/orders	amount	shop.public.orders	amount
+raw/orders	customer_id	shop.public.orders	customer_id
+shop.public.orders	amount	NULL	NULL
+shop.public.orders	customer_id	NULL	NULL
+
+query TTT
+SELECT type, namespace, name FROM openlineage.marquez.search('orders') WHERE type = 'DATASET' ORDER BY name;
+----
+DATASET	bigquery	analytics.orders_daily
+DATASET	bigquery	analytics.orders_enriched
+DATASET	s3://lake	raw/orders
+DATASET	postgres://db.internal:5432	shop.public.orders
+
+query TT
+SELECT type, name FROM openlineage.marquez.search('orders', filter := 'JOB', sort := 'NAME', max_results := 2) ORDER BY name;
+----
+JOB	etl_orders
+JOB	etl_orders.extract
+
+# ---------------------------------------------------------------- unified
+
+query TTTTTR
+SELECT orchestrator, pipeline, status, raw_status, trigger, duration_seconds FROM openlineage.unified.runs ORDER BY queued_at;
+----
+airflow	etl_orders	success	COMPLETED	schedule	625.0
+dbt	dbt-run-jaffle_shop	running	RUNNING	NULL	NULL
+airflow	etl_orders	failed	FAILED	manual	105.0
+unknown	nightly_snapshot	cancelled	ABORTED	NULL	300.0
+
+query TTTTT
+SELECT orchestrator, run_id, task_name, status, attempt FROM openlineage.unified.task_runs ORDER BY started_at;
+----
+airflow	01930a6e-0000-7000-8000-000000000001	etl_orders.extract	success	1
+airflow	01930a6e-0000-7000-8000-000000000001	etl_orders.transform	success	2
+spark	01930a6e-0000-7000-8000-000000000001	etl_orders.transform.orders_enrich.execute_insert_into_hadoop_fs_relation_command	success	NULL
+dbt	01930a6e-0000-7000-8000-000000000007	dbt-run-jaffle_shop.jaffle_shop.customers	success	NULL
+dbt	01930a6e-0000-7000-8000-000000000007	dbt-run-jaffle_shop.jaffle_shop.customer_ltv	running	NULL
+airflow	01930a6e-0000-7000-8000-000000000004	etl_orders.extract	failed	3
+
+query T
+SELECT url FROM openlineage.unified.runs WHERE run_id = '01930a6e-0000-7000-8000-000000000001';
+----
+{OPENLINEAGE_MOCK_MARQUEZ}/api/v1/jobs/runs/01930a6e-0000-7000-8000-000000000001
+
+# The shared layout lines up with the event-file version for a UNION ALL.
+query I
+SELECT count(*) FROM (
+  SELECT * FROM openlineage.unified.runs
+  UNION ALL
+  SELECT * FROM openlineage.main.unified_runs('{OPENLINEAGE_FIXTURES}/events')
+);
+----
+8
+
+statement ok
+DROP SECRET marquez_test;
+
+# ---------------------------------------------------------------- bearer token
+
+statement ok
+CREATE SECRET marquez_wrong (TYPE marquez, BASE_URL '{OPENLINEAGE_MOCK_MARQUEZ_AUTH}/api/v1', API_KEY 'wrong');
+
+statement error
+SELECT * FROM openlineage.marquez.sources;
+----
+HTTP 401
+
+statement ok
+DROP SECRET marquez_wrong;
+
+statement ok
+CREATE SECRET marquez_auth (TYPE marquez, BASE_URL '{OPENLINEAGE_MOCK_MARQUEZ_AUTH}/api/v1', API_KEY 'test-token');
+
+# Default page size (100): every table in one page per listing.
+query IIIIIIII
+SELECT (SELECT count(*) FROM openlineage.marquez.namespaces),
+       (SELECT count(*) FROM openlineage.marquez.sources),
+       (SELECT count(*) FROM openlineage.marquez.datasets),
+       (SELECT count(*) FROM openlineage.marquez.jobs),
+       (SELECT count(*) FROM openlineage.marquez.runs),
+       (SELECT count(*) FROM openlineage.marquez.lineage_events),
+       (SELECT count(*) FROM openlineage.unified.runs),
+       (SELECT count(*) FROM openlineage.unified.task_runs);
+----
+9	3	6	9	10	20	4	6
+
+# Functions at the default page size / depth.
+query IIIIIII
+SELECT (SELECT count(*) FROM openlineage.marquez.dataset_versions('bigquery', 'analytics.customers')),
+       (SELECT count(*) FROM openlineage.marquez.job_versions('airflow-prod', 'etl_orders.transform')),
+       (SELECT count(*) FROM openlineage.marquez.run_facets('01930a6e-0000-7000-8000-000000000005')),
+       (SELECT count(*) FROM openlineage.marquez.lineage_graph('dataset:bigquery:analytics.orders_daily')),
+       (SELECT count(*) FROM openlineage.marquez.column_lineage('dataset:bigquery:analytics.customers')),
+       (SELECT count(*) FROM openlineage.marquez.search('orders')),
+       (SELECT count(*) FROM openlineage.marquez.lineage_events
+        WHERE event_time >= TIMESTAMPTZ '2026-11-03 00:00:00+00' AND event_time < TIMESTAMPTZ '2026-11-04 00:00:00+00');
+----
+2	1	4	10	10	8	4
+
+# The key is redacted in duckdb_secrets().
+query I
+SELECT secret_string LIKE '%test-token%' FROM duckdb_secrets() WHERE name = 'marquez_auth';
+----
+false
+
+statement ok
+DROP SECRET marquez_auth;
+
+statement ok
+CREATE SECRET marquez_bad (TYPE marquez, BASE_URL 'ftp://example.com');
+
+statement error
+SELECT * FROM openlineage.marquez.jobs;
+----
+must start with http
+
+statement ok
+DETACH openlineage;

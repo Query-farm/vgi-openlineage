@@ -1,0 +1,49 @@
+# vgi-lint settings for this worker: https://github.com/Query-farm/vgi-lint-check
+# `make lint-explain`, `vgi-lint lint` in this directory, and CI's metadata job all
+# read this file. Look up a rule with `vgi-lint explain VGI123`; print the metadata tag
+# contract with `vgi-lint spec`.
+
+# The worker to attach, relative to this directory. Build it first with `make build`.
+location = ".venv/bin/vgi-openlineage-worker"
+
+# Gate at info: zero findings of any severity.
+fail_on = "info"
+
+# Waive a finding only with a kind and a reason, so the waiver can be audited:
+#   domain-exemption  permanent and legitimate for this worker
+#   deferred          a real defect you will fix; add expires = "YYYY-MM-DD"
+#   timing            slow or flaky because of the environment, not the metadata
+#   tooling-bug       the linter is wrong; report it upstream
+ignore = []
+
+# lineage_events is Marquez's raw event log: events carry no id, and the same event can be
+# POSTed (and stored) twice, so no column set is guaranteed unique.
+[per_object."openlineage.marquez.lineage_events"]
+ignore = [
+  { code = "VGI807", kind = "domain-exemption", reason = "raw OpenLineage events carry no id and Marquez stores re-sent duplicates, so no key is unique" },
+  { code = "VGI808", kind = "domain-exemption", reason = "run_id cannot be attested ENFORCED against marquez.runs: runs only lists runs of jobs Marquez still lists (hidden/deleted jobs drop out) and DatasetEvents/JobEvents have no run; vgi-python accepts only ENFORCED records" },
+  { code = "VGI809", kind = "domain-exemption", reason = "parent_run_id/root_run_id name runs the producer may never have reported to Marquez, so no FK can be attested" },
+]
+[per_object."openlineage.marquez.runs"]
+ignore = [
+  { code = "VGI808", kind = "tooling-bug", reason = "run_id is this table's own primary key; the rule compares 'run' to the plural table name 'runs'" },
+  { code = "VGI809", kind = "domain-exemption", reason = "parent_run_id/root_run_id come from the producer's parent facet and can name runs Marquez never received" },
+]
+[per_object."openlineage.unified.runs"]
+ignore = [{ code = "VGI808", kind = "tooling-bug", reason = "run_id is this table's own primary key" }]
+[per_object."openlineage.unified.task_runs"]
+ignore = [{ code = "VGI808", kind = "tooling-bug", reason = "task_run_id is this table's own primary key; run_id names the root/parent run, which need not be a top-level run in unified.runs (a nested parent without a root facet), so that FK cannot be attested ENFORCED" }]
+
+# Adopting the gate on a worker that already has findings? Record them once with
+#   vgi-lint lint --baseline vgi-lint-baseline --update-baseline
+# and uncomment the next line. Only new findings fail after that.
+# baseline = "vgi-lint-baseline"
+
+# Credential-gated: every object in the `marquez` and `unified` schemas needs a
+# `marquez` secret (CREATE SECRET (TYPE marquez, BASE_URL ...)) pointing at a running
+# Marquez API server, so executing their examples would fail without one. The static
+# metadata rules all stay on and gate at info; behaviour is covered by the SQL suite
+# (test/sql over stdio, launch and http) against recorded Marquez responses, and by
+# `make lint-ai`, which starts the replayed Marquez for the agent tasks.
+[execution]
+enabled = false

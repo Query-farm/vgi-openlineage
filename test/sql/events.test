@@ -1,0 +1,303 @@
+# name: test/sql/events.test
+# description: OpenLineage event-file functions over the checked-in fixtures (no server)
+# group: [openlineage]
+
+require vgi
+
+require-env OPENLINEAGE_WORKER
+
+require-env OPENLINEAGE_FIXTURES
+
+require-env OPENLINEAGE_MOCK_MARQUEZ
+
+statement ok
+LOAD json;
+
+statement ok
+ATTACH 'openlineage' (TYPE vgi, LOCATION '{OPENLINEAGE_WORKER}');
+
+# ---------------------------------------------------------------- read_events
+
+# A directory: NDJSON, a JSON array and one-event-per-file, all 22 events.
+query II
+SELECT count(*), count(DISTINCT source) FROM openlineage.main.read_events('{OPENLINEAGE_FIXTURES}/events');
+----
+22	8
+
+query TI
+SELECT coalesce(event_type, '(' || event_kind || ')') AS t, count(*)
+FROM openlineage.main.read_events('{OPENLINEAGE_FIXTURES}/events') GROUP BY ALL ORDER BY t;
+----
+(dataset)	1
+(job)	1
+ABORT	1
+COMPLETE	5
+FAIL	2
+OTHER	1
+RUNNING	1
+START	10
+
+# A glob, typed columns and the parent facet.
+query TTTTT
+SELECT job_name, event_type, event_time::VARCHAR, parent_job_name, orchestrator
+FROM openlineage.main.read_events('{OPENLINEAGE_FIXTURES}/events/*.ndjson')
+WHERE job_name = 'etl_orders.extract' ORDER BY event_time;
+----
+etl_orders.extract	START	2026-11-02 02:00:10+00	etl_orders	airflow
+etl_orders.extract	COMPLETE	2026-11-02 02:03:10+00	etl_orders	airflow
+etl_orders.extract	START	2026-11-03 02:00:10+00	etl_orders	airflow
+etl_orders.extract	FAIL	2026-11-03 02:01:40+00	etl_orders	airflow
+
+# inputs / outputs are LIST(STRUCT); facets are JSON.
+query TTT
+SELECT outputs[1].namespace, outputs[1].name, run_facets->>'$.processing_engine.version'
+FROM openlineage.main.read_events('{OPENLINEAGE_FIXTURES}/events/spark.json') WHERE event_type = 'COMPLETE';
+----
+bigquery	analytics.orders_enriched	3.5.1
+
+# DatasetEvent and JobEvent columns.
+query TTTT
+SELECT event_kind, dataset_name, job_name, inputs[1].name
+FROM openlineage.main.read_events('{OPENLINEAGE_FIXTURES}/events/static.ndjson') ORDER BY event_time;
+----
+dataset	analytics.customers	NULL	NULL
+job	NULL	weekly_revenue	analytics.customers
+
+# Projection: only one column requested.
+query I
+SELECT count(run_id) FROM openlineage.main.read_events('{OPENLINEAGE_FIXTURES}/events/dbt-*.json');
+----
+4
+
+# An http(s) URL source (NDJSON served by the mock), and a gzipped file.
+query TI
+SELECT job_name, count(*) FROM openlineage.main.read_events('{OPENLINEAGE_MOCK_MARQUEZ}/files/airflow.ndjson') GROUP BY ALL ORDER BY ALL;
+----
+etl_orders	4
+etl_orders.extract	4
+etl_orders.transform	2
+
+query TT
+SELECT state, orchestrator FROM openlineage.main.runs('{OPENLINEAGE_FIXTURES}/gz');
+----
+ABORT	dagster
+
+statement error
+SELECT * FROM openlineage.main.read_events('{OPENLINEAGE_MOCK_MARQUEZ}/files/missing.ndjson');
+----
+HTTP 404
+
+# ---------------------------------------------------------------- runs
+
+query TTTTR
+SELECT job_name, state, status, orchestrator, duration_seconds
+FROM openlineage.main.runs('{OPENLINEAGE_FIXTURES}/events') ORDER BY first_event_at, job_name;
+----
+etl_orders	COMPLETE	success	airflow	625.0
+etl_orders.extract	COMPLETE	success	airflow	180.0
+etl_orders.transform	COMPLETE	success	airflow	420.0
+orders_enrich.execute_insert_into_hadoop_fs_relation_command	COMPLETE	success	spark	330.0
+dbt-run-jaffle_shop	START	running	dbt	NULL
+jaffle_shop.customers	COMPLETE	success	dbt	38.0
+jaffle_shop.customer_ltv	START	running	dbt	NULL
+etl_orders	FAIL	failed	airflow	105.0
+etl_orders.extract	FAIL	failed	airflow	90.0
+nightly_snapshot	ABORT	cancelled	dagster	300.0
+
+query TT
+SELECT job_name, error_message FROM openlineage.main.runs('{OPENLINEAGE_FIXTURES}/events')
+WHERE status = 'failed' AND error_message IS NOT NULL;
+----
+etl_orders.extract	psycopg2.OperationalError: connection refused
+
+query TTT
+SELECT job_type, nominal_start_time::VARCHAR, len(inputs)
+FROM openlineage.main.runs('{OPENLINEAGE_FIXTURES}/events') WHERE run_id = '01930a6e-0000-7000-8000-000000000001';
+----
+DAG	2026-11-01 02:00:00+00	0
+
+# Spark run: parent is the Airflow transform task, root is the DAG run.
+query TTI
+SELECT parent_job_name, root_run_id, event_count FROM openlineage.main.runs('{OPENLINEAGE_FIXTURES}/events')
+WHERE orchestrator = 'spark';
+----
+etl_orders.transform	01930a6e-0000-7000-8000-000000000001	3
+
+# ---------------------------------------------------------------- job_io
+
+query TTTI
+SELECT job_name, direction, dataset_name, run_count FROM openlineage.main.job_io('{OPENLINEAGE_FIXTURES}/events')
+WHERE job_name IN ('etl_orders.extract', 'weekly_revenue') ORDER BY job_name, direction, dataset_name;
+----
+etl_orders.extract	input	shop.public.orders	2
+etl_orders.extract	output	raw/orders	1
+weekly_revenue	input	analytics.customers	0
+
+query I
+SELECT count(*) FROM openlineage.main.job_io('{OPENLINEAGE_FIXTURES}/events');
+----
+12
+
+# ---------------------------------------------------------------- dataset_schema
+
+query ITTT
+SELECT ordinal, field_name, field_type, description FROM openlineage.main.dataset_schema('{OPENLINEAGE_FIXTURES}/events')
+WHERE dataset_name = 'raw/orders' ORDER BY ordinal;
+----
+1	order_id	INTEGER	Primary key
+2	customer_id	INTEGER	NULL
+3	amount	NUMERIC(12,2)	Order total in USD
+4	ordered_at	TIMESTAMP	NULL
+
+# The DatasetEvent is the latest schema of analytics.customers.
+query TT
+SELECT DISTINCT observed_at::VARCHAR, run_id FROM openlineage.main.dataset_schema('{OPENLINEAGE_FIXTURES}/events')
+WHERE dataset_name = 'analytics.customers';
+----
+2026-11-05 09:00:00+00	NULL
+
+# ---------------------------------------------------------------- column_lineage
+
+query TTTTT
+SELECT output_field, input_dataset, input_field, transformation_type, transformation_subtype
+FROM openlineage.main.column_lineage('{OPENLINEAGE_FIXTURES}/events')
+WHERE output_dataset = 'analytics.orders_enriched' AND output_field = 'segment' ORDER BY input_dataset;
+----
+segment	analytics.orders_daily	revenue	INDIRECT	CONDITIONAL
+segment	crm.public.customers	tier	DIRECT	TRANSFORMATION
+
+query I
+SELECT count(*) FROM openlineage.main.column_lineage('{OPENLINEAGE_FIXTURES}/events');
+----
+14
+
+# ---------------------------------------------------------------- facets
+
+query TTI
+SELECT entity, facet_name, count(*) FROM openlineage.main.facets('{OPENLINEAGE_FIXTURES}/events')
+WHERE facet_name IN ('parent', 'errorMessage', 'columnLineage', 'documentation') GROUP BY ALL ORDER BY ALL;
+----
+dataset	documentation	1
+output	columnLineage	4
+run	errorMessage	1
+run	parent	12
+
+query T
+SELECT DISTINCT facet->>'$.version' FROM openlineage.main.facets('{OPENLINEAGE_FIXTURES}/events')
+WHERE facet_name = 'processing_engine' AND job_name LIKE 'orders_enrich%';
+----
+3.5.1
+
+# ---------------------------------------------------------------- lineage
+
+query TIT
+SELECT name, hops, reached_from FROM openlineage.main.lineage('{OPENLINEAGE_FIXTURES}/events', 'analytics.customers', depth := 20, direction := 'upstream')
+WHERE node_type = 'dataset' ORDER BY hops, name;
+----
+analytics.customers	0	NULL
+analytics.orders_enriched	2	job:dbt:jaffle_shop.customers
+analytics.orders_daily	4	job:spark-cluster:orders_enrich.execute_insert_into_hadoop_fs_relation_command
+crm.public.customers	4	job:spark-cluster:orders_enrich.execute_insert_into_hadoop_fs_relation_command
+raw/orders	6	job:airflow-prod:etl_orders.transform
+shop.public.orders	8	job:airflow-prod:etl_orders.extract
+
+# Full node id with a ':' in the namespace; depth limits the walk.
+query TTI
+SELECT direction, node_id, hops FROM openlineage.main.lineage('{OPENLINEAGE_FIXTURES}/events', 'dataset:postgres://db.internal:5432:shop.public.orders', depth := 2, direction := 'downstream')
+ORDER BY hops;
+----
+start	dataset:postgres://db.internal:5432:shop.public.orders	0
+downstream	job:airflow-prod:etl_orders.extract	1
+downstream	dataset:s3://lake:raw/orders	2
+
+query I
+SELECT count(*) FROM openlineage.main.lineage('{OPENLINEAGE_FIXTURES}/events', 'job:dbt:jaffle_shop.customers');
+----
+11
+
+statement error
+SELECT * FROM openlineage.main.lineage('{OPENLINEAGE_FIXTURES}/events', 'nope.nothing');
+----
+does not appear in these events
+
+# ---------------------------------------------------------------- unified
+
+query TTTTTT
+SELECT orchestrator, pipeline, status, raw_status, trigger, queued_at::VARCHAR
+FROM openlineage.main.unified_runs('{OPENLINEAGE_FIXTURES}/events') ORDER BY queued_at;
+----
+airflow	etl_orders	success	COMPLETE	schedule	2026-11-02 02:00:05+00
+dbt	dbt-run-jaffle_shop	running	START	NULL	2026-11-02 03:00:00+00
+airflow	etl_orders	failed	FAIL	manual	2026-11-03 02:00:05+00
+dagster	nightly_snapshot	cancelled	ABORT	NULL	2026-11-04 10:00:00+00
+
+query TTTI
+SELECT run_id, task_name, status, attempt FROM openlineage.main.unified_task_runs('{OPENLINEAGE_FIXTURES}/events')
+WHERE orchestrator = 'airflow' ORDER BY started_at;
+----
+01930a6e-0000-7000-8000-000000000001	etl_orders.extract	success	1
+01930a6e-0000-7000-8000-000000000001	etl_orders.transform	success	2
+01930a6e-0000-7000-8000-000000000004	etl_orders.extract	failed	3
+
+# The Spark job counts toward the DAG run it ultimately belongs to.
+query TI
+SELECT r.pipeline, count(*) FROM openlineage.main.unified_task_runs('{OPENLINEAGE_FIXTURES}/events') t
+JOIN openlineage.main.unified_runs('{OPENLINEAGE_FIXTURES}/events') r USING (run_id) GROUP BY ALL ORDER BY ALL;
+----
+dbt-run-jaffle_shop	2
+etl_orders	4
+
+# ---------------------------------------------------------------- errors / edge cases
+
+statement error
+SELECT * FROM openlineage.main.read_events('{OPENLINEAGE_FIXTURES}/no-such-dir/*.ndjson');
+----
+no files match
+
+statement error
+SELECT * FROM openlineage.main.lineage('{OPENLINEAGE_FIXTURES}/events', 'analytics.customers', direction := 'sideways');
+----
+<REGEX>:.*sideways.*
+
+# ---------------------------------------------------------------- scalars over read_json
+
+query TI
+SELECT openlineage.main.orchestrator(producer) AS o, count(*)
+FROM read_json('{OPENLINEAGE_FIXTURES}/all-events.ndjson', format = 'newline_delimited') GROUP BY ALL ORDER BY o;
+----
+airflow	10
+dagster	3
+dbt	4
+spark	3
+unknown	2
+
+query TT
+SELECT t, openlineage.main.run_status(t) FROM (VALUES ('START'), ('complete'), ('FAIL'), ('ABORT'), ('OTHER'), ('bogus'), (NULL)) v(t)
+ORDER BY t NULLS LAST;
+----
+ABORT	cancelled
+FAIL	failed
+OTHER	queued
+START	running
+bogus	NULL
+complete	success
+NULL	NULL
+
+query T
+SELECT openlineage.main.orchestrator(NULL);
+----
+NULL
+
+# A malformed NDJSON line fails with its location, unless ignore_errors.
+statement error
+SELECT * FROM openlineage.main.read_events('{OPENLINEAGE_FIXTURES}/bad/broken.ndjson');
+----
+broken.ndjson:2: not valid JSON
+
+query I
+SELECT count(*) FROM openlineage.main.runs('{OPENLINEAGE_FIXTURES}/bad/broken.ndjson', ignore_errors := true);
+----
+1
+
+statement ok
+DETACH openlineage;

@@ -1,0 +1,159 @@
+# Private graders for the public vgi.agent_test_tasks in the worker's catalog metadata.
+# `vgi-lint lint --ai` (make lint-ai) runs an agent on each prompt and grades it against
+# reference_sql. See https://github.com/Query-farm/vgi-lint-check (VGI920).
+#
+# Offline: the event-file tasks read the checked-in fixtures under test/fixtures/events
+# (paths are relative to the repo root, where make runs the linter). The marquez_* tasks
+# read the replayed Marquez that `make lint-ai` starts on 127.0.0.1:5056
+# (test/mock_marquez/server.py over the recordings in test/fixtures/marquez); their
+# reference SQL creates the secret itself.
+tasks:
+  - name: failed_runs_from_files
+    unordered: true
+    ignore_column_names: true
+    reference_sql: >-
+      SELECT job_name, error_message FROM openlineage.main.runs('test/fixtures/events')
+      WHERE status = 'failed' AND error_message IS NOT NULL
+  - name: events_per_type
+    unordered: true
+    ignore_column_names: true
+    reference_sql: >-
+      SELECT event_type, count(*) AS events FROM openlineage.main.read_events('test/fixtures/events')
+      GROUP BY event_type
+  - name: datasets_read_by_job
+    unordered: true
+    ignore_column_names: true
+    reference_sql: >-
+      SELECT dataset_namespace, dataset_name FROM openlineage.main.job_io('test/fixtures/events')
+      WHERE job_name = 'etl_orders.extract' AND direction = 'input'
+  - name: customers_schema
+    ignore_column_names: true
+    reference_sql: >-
+      SELECT field_name, field_type FROM openlineage.main.dataset_schema('test/fixtures/events')
+      WHERE dataset_name = 'analytics.customers' ORDER BY ordinal
+  - name: segment_column_sources
+    unordered: true
+    ignore_column_names: true
+    reference_sql: >-
+      SELECT input_dataset, input_field FROM openlineage.main.column_lineage('test/fixtures/events')
+      WHERE output_dataset = 'analytics.orders_enriched' AND output_field = 'segment'
+  - name: spark_engine_version
+    ignore_column_names: true
+    reference_sql: >-
+      SELECT DISTINCT facet->>'$.version' AS version FROM openlineage.main.facets('test/fixtures/events')
+      WHERE facet_name = 'processing_engine' AND facet->>'$.name' = 'spark'
+  - name: upstream_of_customers
+    unordered: true
+    ignore_column_names: true
+    reference_sql: >-
+      SELECT namespace, name, hops FROM openlineage.main.lineage('test/fixtures/events', 'analytics.customers',
+      depth := 100, direction := 'upstream') WHERE node_type = 'dataset' AND hops > 0
+  - name: orchestrator_run_counts
+    unordered: true
+    ignore_column_names: true
+    reference_sql: >-
+      SELECT orchestrator, count(*) AS runs, count(*) FILTER (WHERE status = 'success') AS succeeded
+      FROM openlineage.main.unified_runs('test/fixtures/events') GROUP BY orchestrator
+  - name: slowest_task_runs
+    ignore_column_names: true
+    reference_sql: >-
+      SELECT task_name, duration_seconds FROM openlineage.main.unified_task_runs('test/fixtures/events')
+      WHERE ended_at IS NOT NULL ORDER BY duration_seconds DESC LIMIT 3
+  - name: producer_orchestrators
+    unordered: true
+    ignore_column_names: true
+    reference_sql: >-
+      SELECT openlineage.main.orchestrator(producer) AS orchestrator, count(*) AS events
+      FROM read_json('test/fixtures/all-events.ndjson', format = 'newline_delimited') GROUP BY ALL
+  - name: normalized_event_statuses
+    unordered: true
+    ignore_column_names: true
+    reference_sql: >-
+      SELECT openlineage.main.run_status(eventType) AS status, count(*) AS events
+      FROM read_json('test/fixtures/all-events.ndjson', format = 'newline_delimited')
+      WHERE openlineage.main.run_status(eventType) IS NOT NULL GROUP BY ALL
+  - name: marquez_namespaces
+    unordered: true
+    ignore_column_names: true
+    reference_sql:
+      - CREATE OR REPLACE SECRET marquez (TYPE marquez, BASE_URL 'http://127.0.0.1:5056')
+      - >-
+        SELECT n.name, count(d.name) AS datasets FROM openlineage.marquez.namespaces n
+        LEFT JOIN openlineage.marquez.datasets d ON d.namespace = n.name GROUP BY n.name
+  - name: marquez_failed_runs
+    unordered: true
+    ignore_column_names: true
+    reference_sql:
+      - CREATE OR REPLACE SECRET marquez (TYPE marquez, BASE_URL 'http://127.0.0.1:5056')
+      - SELECT job_name, duration_ms FROM openlineage.marquez.runs WHERE state = 'FAILED'
+  - name: marquez_unified_status
+    unordered: true
+    ignore_column_names: true
+    reference_sql:
+      - CREATE OR REPLACE SECRET marquez (TYPE marquez, BASE_URL 'http://127.0.0.1:5056')
+      - >-
+        SELECT 'run' AS kind, status, count(*) AS n FROM openlineage.unified.runs GROUP BY status
+        UNION ALL
+        SELECT 'task_run', status, count(*) FROM openlineage.unified.task_runs GROUP BY status
+  - name: marquez_sources
+    unordered: true
+    ignore_column_names: true
+    reference_sql:
+      - CREATE OR REPLACE SECRET marquez (TYPE marquez, BASE_URL 'http://127.0.0.1:5056')
+      - SELECT name, connection_url FROM openlineage.marquez.sources
+  - name: marquez_latest_failed_jobs
+    unordered: true
+    ignore_column_names: true
+    reference_sql:
+      - CREATE OR REPLACE SECRET marquez (TYPE marquez, BASE_URL 'http://127.0.0.1:5056')
+      - SELECT namespace, name FROM openlineage.marquez.jobs WHERE latest_run_state = 'FAILED'
+  - name: marquez_events_on_day
+    unordered: true
+    ignore_column_names: true
+    reference_sql:
+      - CREATE OR REPLACE SECRET marquez (TYPE marquez, BASE_URL 'http://127.0.0.1:5056')
+      - >-
+        SELECT event_type, count(*) AS events FROM openlineage.marquez.lineage_events
+        WHERE event_time >= TIMESTAMPTZ '2026-11-03 00:00:00+00' AND event_time < TIMESTAMPTZ '2026-11-04 00:00:00+00'
+        GROUP BY event_type
+  - name: marquez_customers_versions
+    ignore_column_names: true
+    reference_sql:
+      - CREATE OR REPLACE SECRET marquez (TYPE marquez, BASE_URL 'http://127.0.0.1:5056')
+      - SELECT count(*) FROM openlineage.marquez.dataset_versions('bigquery', 'analytics.customers')
+  - name: marquez_transform_versions
+    unordered: true
+    ignore_column_names: true
+    reference_sql:
+      - CREATE OR REPLACE SECRET marquez (TYPE marquez, BASE_URL 'http://127.0.0.1:5056')
+      - SELECT version, latest_run_state FROM openlineage.marquez.job_versions('airflow-prod', 'etl_orders.transform')
+  - name: marquez_run_error
+    ignore_column_names: true
+    reference_sql:
+      - CREATE OR REPLACE SECRET marquez (TYPE marquez, BASE_URL 'http://127.0.0.1:5056')
+      - >-
+        SELECT facet->>'$.message' FROM openlineage.marquez.run_facets('01930a6e-0000-7000-8000-000000000005')
+        WHERE facet_name = 'errorMessage'
+  - name: marquez_downstream_datasets
+    unordered: true
+    ignore_column_names: true
+    reference_sql:
+      - CREATE OR REPLACE SECRET marquez (TYPE marquez, BASE_URL 'http://127.0.0.1:5056')
+      - >-
+        SELECT namespace, name FROM openlineage.marquez.lineage_graph('dataset:bigquery:analytics.orders_daily')
+        WHERE node_type = 'DATASET' AND direction = 'downstream'
+  - name: marquez_customer_column_sources
+    unordered: true
+    ignore_column_names: true
+    reference_sql:
+      - CREATE OR REPLACE SECRET marquez (TYPE marquez, BASE_URL 'http://127.0.0.1:5056')
+      - >-
+        SELECT output_field, input_dataset, input_field
+        FROM openlineage.marquez.column_lineage('dataset:bigquery:analytics.customers')
+        WHERE output_dataset = 'analytics.customers'
+  - name: marquez_search_orders
+    unordered: true
+    ignore_column_names: true
+    reference_sql:
+      - CREATE OR REPLACE SECRET marquez (TYPE marquez, BASE_URL 'http://127.0.0.1:5056')
+      - SELECT namespace, name FROM openlineage.marquez.search('orders') WHERE type = 'DATASET'
