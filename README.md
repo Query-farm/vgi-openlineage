@@ -29,7 +29,7 @@ lineage into SQL two ways:
 ```sql
 INSTALL vgi FROM community;
 LOAD vgi;
-ATTACH 'openlineage' (TYPE vgi, LOCATION 'uvx --from git+https://github.com/Query-farm/vgi-openlineage@v0.1.1 vgi-openlineage-worker');
+ATTACH 'openlineage' (TYPE vgi, LOCATION 'uvx --from git+https://github.com/Query-farm/vgi-openlineage@v0.1.2 vgi-openlineage-worker');
 
 -- Event files: what failed, and why?
 SELECT job_name, ended_at, error_message
