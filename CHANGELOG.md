@@ -1,6 +1,13 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.1.1
+
+- Fix: every query whose filter is pushed down to the worker (a `WHERE` clause, or
+  `ORDER BY … LIMIT`) failed with "No DuckDB-compatible engine is installed". The SDK binds
+  and evaluates pushed predicates with a local engine, which was only in the dev
+  dependency group; the runtime dependency is now `vgi-python[http,haybarn]`.
+
+## 0.1.0
 
 Initial release: OpenLineage event files (read_events, runs, job_io, dataset_schema,
 column_lineage, facets, lineage, unified_runs, unified_task_runs, orchestrator, run_status),
