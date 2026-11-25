@@ -24,12 +24,14 @@ lineage into SQL two ways:
   Query.Farm orchestrator worker shares, so lineage-derived runs `UNION ALL` with the
   Airflow, Dagster and Prefect workers.
 
+vgi-openlineage 0.2.0 speaks VGI protocol 3.4, so it needs Haybarn 2.0.1 or newer (Haybarn 2.0.0 loads a 3.3 `vgi` extension that cannot attach it).
+
 ## Quick start
 
 ```sql
 INSTALL vgi FROM community;
 LOAD vgi;
-ATTACH 'openlineage' (TYPE vgi, LOCATION 'uvx --from git+https://github.com/Query-farm/vgi-openlineage@v0.1.2 vgi-openlineage-worker');
+ATTACH 'openlineage' (TYPE vgi, LOCATION 'uvx --from git+https://github.com/Query-farm/vgi-openlineage@v0.2.0 vgi-openlineage-worker');
 
 -- Event files: what failed, and why?
 SELECT job_name, ended_at, error_message
